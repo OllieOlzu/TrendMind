@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini StockTracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .glass-panel { background: white; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center gap-2 cursor-pointer" onclick="goHome()">
+                    <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">G</div>
+                    <span class="font-bold text-xl tracking-tight">Gemini<span class="text-blue-600">Stocks</span></span>
+                </div>
+                <div class="relative w-full max-w-md mx-4">
+                    <input type="text" id="searchInput" placeholder="Search stocks (e.g., Apple, TSLA)..." 
+                           class="w-full pl-10 pr-4 py-2 rounded-full border border-slate-300 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                           oninput="handleSearch(this.value)">
+                    <svg class="w-5 h-5 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <div id="searchResults" class="absolute top-full left-0 right-0 bg-white shadow-xl rounded-xl mt-2 hidden border border-slate-100 overflow-hidden z-50"></div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <div id="homeView">
+            <h1 class="text-2xl font-bold mb-6">Market Overview</h1>
+            <div id="stockGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                </div>
+        </div>
+
+        <div id="detailView" class="hidden animate-fade-in">
+            <button onclick="goHome()" class="mb-4 flex items-center text-slate-500 hover:text-blue-600 transition-colors">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg> Back to Dashboard
+            </button>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="glass-panel rounded-2xl p-6">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h2 id="detailName" class="text-3xl font-bold text-slate-900"></h2>
+                                <span id="detailSymbol" class="text-slate-500 font-mono text-sm bg-slate-100 px-2 py-1 rounded"></span>
+                            </div>
+                            <div class="text-right">
+                                <div id="detailPrice" class="text-3xl font-bold text-slate-900">--</div>
+                                <div id="detailChange" class="text-sm font-medium">--</div>
+                            </div>
+                        </div>
+                        <div class="h-80 w-full relative">
+                            <canvas id="stockChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel rounded-2xl p-6 border-l-4 border-blue-500">
+                        <div class="flex items-center gap-2 mb-4">
+                            <svg class="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                            <h3 class="text-xl font-bold text-slate-800">Gemini AI Insights</h3>
+                        </div>
+                        <div id="aiLoading" class="hidden flex items-center space-x-2 text-slate-500">
+                            <div class="w-2 h-2 bg-blue-600 rounded-full animate-bounce"></div>
+                            <div class="w-2 h-2 bg-blue-600 rounded-full animate-bounce delay-75"></div>
+                            <div class="w-2 h-2 bg-blue-600 rounded-full animate-bounce delay-150"></div>
+                            <span>Analyzing market sentiment...</span>
+                        </div>
+                        <div id="aiContent" class="prose prose-slate max-w-none text-sm text-slate-600"></div>
+                    </div>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="glass-panel rounded-2xl p-6 h-full">
+                        <h3 class="font-bold text-lg mb-4 text-slate-800 border-b pb-2">Related News</h3>
+                        <div id="newsList" class="space-y-4">
+                            </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let chartInstance = null;
+        let allStocks = [];
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchStocks();
+        });
+
+        async function fetchStocks() {
+            try {
+                const res = await fetch('/api/stocks');
+                allStocks = await res.json();
+                renderHomeGrid(allStocks);
+            } catch (e) { console.error(e); }
+        }
+
+        function renderHomeGrid(stocks) {
+            const grid = document.getElementById('stockGrid');
+            grid.innerHTML = stocks.map(stock => `
+                <div onclick="loadStock('${stock.symbol}', '${stock.name}')" class="glass-panel p-6 rounded-xl hover:shadow-lg transition-all cursor-pointer group">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="font-bold text-lg text-slate-800 group-hover:text-blue-600 transition-colors">${stock.name}</h3>
+                        <span class="text-xs font-mono bg-slate-100 text-slate-500 px-2 py-1 rounded">${stock.symbol}</span>
+                    </div>
+                    <div class="text-sm text-slate-500">Click to view analysis & chart</div>
+                </div>
+            `).join('');
+        }
+
+        // Search Functionality
+        function handleSearch(query) {
+            const results = document.getElementById('searchResults');
+            if (!query) {
+                results.classList.add('hidden');
+                return;
+            }
+            
+            const matches = allStocks.filter(s => 
+                s.name.toLowerCase().includes(query.toLowerCase()) || 
+                s.symbol.toLowerCase().includes(query.toLowerCase())
+            );
+
+            results.innerHTML = matches.length ? matches.map(s => `
+                <div onclick="loadStock('${s.symbol}', '${s.name}'); clearSearch()" class="p-3 hover:bg-slate-50 cursor-pointer border-b last:border-0 border-slate-50">
+                    <div class="font-bold text-sm text-slate-800">${s.name}</div>
+                    <div class="text-xs text-slate-400">${s.symbol}</div>
+                </div>
+            `).join('') : '<div class="p-3 text-sm text-slate-400">No results found</div>';
+            
+            results.classList.remove('hidden');
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('searchResults').classList.add('hidden');
+        }
+
+        // View Navigation
+        function goHome() {
+            document.getElementById('homeView').classList.remove('hidden');
+            document.getElementById('detailView').classList.add('hidden');
+        }
+
+        async function loadStock(symbol, name) {
+            document.getElementById('homeView').classList.add('hidden');
+            document.getElementById('detailView').classList.remove('hidden');
+            
+            document.getElementById('detailName').innerText = name;
+            document.getElementById('detailSymbol').innerText = symbol;
+            document.getElementById('aiContent').innerHTML = '';
+            document.getElementById('newsList').innerHTML = '';
+            document.getElementById('detailPrice').innerText = 'Loading...';
+
+            // 1. Load Chart Data
+            loadChart(symbol);
+
+            // 2. Load AI Analysis & News
+            document.getElementById('aiLoading').classList.remove('hidden');
+            try {
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbol, name })
+                });
+                const data = await res.json();
+                
+                document.getElementById('aiLoading').classList.add('hidden');
+                document.getElementById('aiContent').innerHTML = data.analysis;
+                
+                // Render News
+                const newsHtml = data.articles.map(article => `
+                    <div class="mb-4">
+                        <a href="${article.url}" target="_blank" class="text-sm font-semibold text-slate-800 hover:text-blue-600 line-clamp-2 leading-tight">${article.title}</a>
+                        <div class="flex justify-between items-center mt-1">
+                            <span class="text-xs text-slate-400">${article.source}</span>
+                            <a href="${article.url}" target="_blank" class="text-xs text-blue-500 hover:underline">View Source</a>
+                        </div>
+                    </div>
+                `).join('');
+                document.getElementById('newsList').innerHTML = newsHtml || '<div class="text-sm text-slate-400">No recent news available.</div>';
+
+            } catch (error) {
+                document.getElementById('aiLoading').classList.add('hidden');
+                document.getElementById('aiContent').innerText = "Failed to load analysis.";
+            }
+        }
+
+        async function loadChart(symbol) {
+            const ctx = document.getElementById('stockChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            const res = await fetch(`/api/history/${symbol}`);
+            const { data } = await res.json();
+
+            // Calculate basic price change for UI
+            if (data.length > 0) {
+                const latest = data[data.length - 1].price;
+                const prev = data[0].price; // compare to earliest in loaded set
+                const diff = (latest - prev).toFixed(2);
+                const pct = ((diff / prev) * 100).toFixed(2);
+                const color = diff >= 0 ? 'text-green-500' : 'text-red-500';
+                
+                document.getElementById('detailPrice').innerText = `$${latest.toFixed(2)}`;
+                document.getElementById('detailChange').innerHTML = `<span class="${color}">${diff >= 0 ? '+' : ''}${diff} (${pct}%)</span> <span class="text-slate-400 text-xs">past 100d</span>`;
+            }
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => d.date),
+                    datasets: [{
+                        label: 'Price (Close)',
+                        data: data.map(d => d.price),
+                        borderColor: '#2563eb',
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: false },
+                        y: { grid: { color: '#f1f5f9' } }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
