@@ -9,9 +9,8 @@ const path = require('path');
 const app = express();
 const PORT = 3000;
 
-// CONFIGURATION - REPLACE WITH YOUR KEYS
-const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY'; 
-const NEWS_API_KEY = 'YOUR_NEWS_API_KEY'; 
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const NEWS_API_KEY = process.env.NEWS_API_KEY;
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
