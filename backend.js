@@ -1,133 +1,114 @@
-// backend.js
-const express = require('express');
-const axios = require('axios');
-const cors = require('cors');
-const { parse } = require('csv-parse/sync');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const path = require('path');
+import express from "express";
+import cors from "cors";
+import { getJson } from "serpapi";
+import "dotenv/config";
+import Groq from "groq-sdk";
+import axios from "axios";
 
 const app = express();
-const PORT = 3000;
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const NEWS_API_KEY = process.env.NEWS_API_KEY;
-
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public')); // Serve the frontend
+app.use(express.static("public"));
 
-// --- LOCAL TICKER DATABASE (Subset for demo) ---
-const STOCKS = [
-    { symbol: "AAPL.US", name: "Apple Inc." },
-    { symbol: "MSFT.US", name: "Microsoft Corp." },
-    { symbol: "GOOGL.US", name: "Alphabet Inc." },
-    { symbol: "AMZN.US", name: "Amazon.com Inc." },
-    { symbol: "TSLA.US", name: "Tesla Inc." },
-    { symbol: "NVDA.US", name: "NVIDIA Corp." },
-    { symbol: "META.US", name: "Meta Platforms" },
-    { symbol: "NFLX.US", name: "Netflix Inc." },
-    { symbol: "AMD.US", name: "Advanced Micro Devices" },
-    { symbol: "INTC.US", name: "Intel Corp." },
-    { symbol: "IBM.US", name: "IBM" },
-    { symbol: "ORCL.US", name: "Oracle Corp." },
-    { symbol: "CSCO.US", name: "Cisco Systems" },
-    { symbol: "ADBE.US", name: "Adobe Inc." },
-    { symbol: "CRM.US", name: "Salesforce Inc." },
-    { symbol: "QCOM.US", name: "Qualcomm Inc." },
-    { symbol: "TXN.US", name: "Texas Instruments" },
-    { symbol: "AVGO.US", name: "Broadcom Inc." },
-    { symbol: "SHOP.US", name: "Shopify Inc." },
-    { symbol: "SPOT.US", name: "Spotify Technology" }
-];
-
-// --- ENDPOINTS ---
-
-// 1. Search Stocks
-app.get('/api/stocks', (req, res) => {
-    const query = req.query.q ? req.query.q.toLowerCase() : '';
-    if (!query) return res.json(STOCKS.slice(0, 10)); // Default list
-
-    const filtered = STOCKS.filter(s => 
-        s.name.toLowerCase().includes(query) || 
-        s.symbol.toLowerCase().includes(query)
-    );
-    res.json(filtered);
+const client = new Groq({
+  apiKey: process.env.GROQ_API_KEY
 });
 
-// 2. Fetch Historical Data (Stooq)
-app.get('/api/history/:symbol', async (req, res) => {
-    const symbol = req.params.symbol;
-    // Stooq CSV URL
-    const url = `https://stooq.com/q/d/l/?s=${symbol.toLowerCase()}&i=d`;
-
+app.get("/api/stooq", async (req, res) => {
     try {
+        let stock = req.query.stock;
+
+        if (!stock) {
+            return res.status(400).json({ error: "Stock symbol required" });
+        }
+
+        stock = stock.toLowerCase() + ".us";
+
+        const url = `https://stooq.com/q/d/l/?s=${stock}&i=d`;
+
         const response = await axios.get(url);
-        // Stooq returns a CSV file. We parse it.
-        const records = parse(response.data, {
-            columns: true,
-            skip_empty_lines: true
+
+        const csv = response.data;
+
+        const lines = csv.trim().split("\n");
+        const headers = lines[0].split(",");
+
+        const data = lines.slice(1).map(line => {
+            const values = line.split(",");
+            return {
+                date: values[0],
+                close: parseFloat(values[4])
+            };
         });
 
-        // Format for Chart.js (Date and Close price) - Take last 100 days for speed
-        const chartData = records.slice(0, 100).reverse().map(row => ({
-            date: row.Date,
-            price: parseFloat(row.Close)
-        }));
+        res.json(data);
 
-        res.json({ symbol, data: chartData });
     } catch (error) {
-        console.error("Stooq Error:", error.message);
         res.status(500).json({ error: "Failed to fetch stock data" });
     }
 });
 
-// 3. Analyze with Gemini (News + AI)
-app.post('/api/analyze', async (req, res) => {
-    const { symbol, name } = req.body;
+app.post("/api/newssummary", async (req, res) => {
+  const { message } = req.body;
+  if (!message) return res.status(400).json({ reply: "No message provided" });
 
-    try {
-        // Step A: Fetch News
-        // Using NewsAPI.org as an example source
-        const newsUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(name)}&sortBy=publishedAt&language=en&apiKey=${NEWS_API_KEY}`;
-        const newsResp = await axios.get(newsUrl);
-        const articles = newsResp.data.articles.slice(0, 5); // Analyze top 5 articles
+  try {
+    const completion = await client.chat.completions.create({
+      messages: [
+        { role: "system", content: "You are a stock headline summarising asistant. Summarise the news headlines given in 2-3 sentances. Dive right into the responce, don't say what your going to do." },
+        { role: "user", content: message }
+      ],
+      model: "llama-3.1-8b-instant",  // or any other supported model
+      "top_p": 1,
+      "temperature": 0,
+      "seed": 0,
+    });
 
-        if (articles.length === 0) {
-            return res.json({ analysis: "No recent news found to analyze.", articles: [] });
-        }
+    // The API returns an array of choices
+    const reply = completion.choices?.[0]?.message?.content || "";
+    res.json({ reply });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ reply: "Error contacting Groq API" });
+  }
+});
 
-        // Step B: Prepare Prompt for Gemini
-        const newsSummary = articles.map(a => `- ${a.title} (${a.source.name})`).join('\n');
-        const prompt = `
-        You are a financial analyst AI. Analyze the following recent news headlines for ${name} (${symbol}):
-        
-        ${newsSummary}
-        
-        Based on this, provide a concise prediction of the stock trend (Bullish/Bearish/Neutral) and a brief reasoning. 
-        Format your response as HTML (use <p>, <strong>, <ul>). 
-        Important: End with a clear disclaimer that this is not financial advice.
-        `;
+app.get("/api/news", async (req, res) => {
+  const stock = req.query.stock;
 
-        // Step C: Generate Content
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
+  if (!stock) {
+    return res.status(400).json({ error: "Missing stock symbol" });
+  }
 
-        res.json({ 
-            analysis: text, 
-            articles: articles.map(a => ({ title: a.title, url: a.url, source: a.source.name, date: a.publishedAt })) 
-        });
+  try {
+    const result = await getJson({
+      engine: "google_news",
+      q: `${stock} stock news`,
+      api_key: process.env.APIKEY
+    });
 
-    } catch (error) {
-        console.error("Analysis Error:", error.message);
-        res.status(500).json({ error: "AI Analysis failed" });
-    }
+    const articles = (result.news_results || [])
+      .slice(0, 10)
+      .map(a => ({
+        title: a.title,
+        source: a.source,
+        link: a.link,
+        date: a.date
+      }));
+
+    res.json({
+      stock,
+      results: articles
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch news" });
+  }
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
